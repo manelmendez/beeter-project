@@ -39,6 +39,7 @@ public class StingResource {
 	private String DELETE_STING_QUERY = "delete from stings where stingid=?";
 	private String UPDATE_STING_QUERY = "update stings set subject=ifnull(?, subject), content=ifnull(?, content) where stingid=?";
 	
+
 	
 	@GET
 	@Produces(MediaType.BEETER_API_STING_COLLECTION)
@@ -313,6 +314,81 @@ public class StingResource {
 		rb = Response.ok(sting).cacheControl(cc).tag(eTag);
 	 
 		return rb.build();
+	}
+	
+	private String GET_STINGS_EX_S = "select s.*, u.name from stings s, users u where u.username=s.username and s.subject like ? limit ? ";
+	private String GET_STINGS_EX_C= "select s.*, u.name from stings s, users u where u.username=s.username and s.content like ? limit ? ";
+	private String GET_STINGS_EX_SC = "select s.*, u.name from stings s, users u where u.username=s.username and (s.subject like ? and s.content like ?) limit ? ";
+	@GET
+	@Path("/search")
+	@Produces(MediaType.BEETER_API_STING_COLLECTION)
+	public StingCollection getStings2(@QueryParam("length") int length,
+			@QueryParam("subject") String subject, @QueryParam("content") String content) {
+		StingCollection stings = new StingCollection();
+	 
+		Connection conn = null;
+		try {
+			conn = ds.getConnection();
+		} catch (SQLException e) {
+			throw new ServerErrorException("Could not connect to the database",
+					Response.Status.SERVICE_UNAVAILABLE);
+		}
+	 
+		PreparedStatement stmt = null;
+		try {
+			if(subject==null && content == null)
+			{
+				stmt = conn.prepareStatement(GET_STINGS_QUERY);
+				stmt.setTimestamp(1, null);
+				length = (length <= 0) ? 5 : length;
+				stmt.setInt(2, length);
+			}
+			else if(subject!=null && content == null)
+			{
+				stmt = conn.prepareStatement(GET_STINGS_EX_S);
+				stmt.setString(1, "%"+subject+"%");
+				length = (length <= 0) ? 5 : length;
+				stmt.setInt(2, length);
+			}
+			else if(subject==null && content != null)
+			{
+				stmt = conn.prepareStatement(GET_STINGS_EX_C);
+				stmt.setString(1, "%"+content+"%");
+				length = (length <= 0) ? 5 : length;
+				stmt.setInt(2, length);
+			}
+			else if(subject!=null && content != null)
+			{
+				stmt = conn.prepareStatement(GET_STINGS_EX_SC);
+				stmt.setString(1, "%"+subject+"%");
+				stmt.setString(2, "%"+content+"%");
+				length = (length <= 0) ? 5 : length;
+				stmt.setInt(3, length);
+			}
+			ResultSet rs = stmt.executeQuery();
+			while (rs.next()) {
+				Sting sting = new Sting();
+				sting.setStingid(rs.getInt("stingid"));
+				sting.setUsername(rs.getString("username"));
+				sting.setAuthor(rs.getString("name"));
+				sting.setSubject(rs.getString("subject"));
+				sting.setLastModified(rs.getTimestamp("last_modified").getTime());
+				sting.setCreationTimestamp(rs.getTimestamp("creation_timestamp").getTime()); 
+				stings.addSting(sting);
+			}
+		} catch (SQLException e) {
+			throw new ServerErrorException(e.getMessage(),
+					Response.Status.INTERNAL_SERVER_ERROR);
+		} finally {
+			try {
+				if (stmt != null)
+					stmt.close();
+				conn.close();
+			} catch (SQLException e) {
+			}
+		}
+	 
+		return stings;
 	}
 }
 
